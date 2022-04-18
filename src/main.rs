@@ -18,14 +18,20 @@ use std::{
 };
 
 trait Expression: fmt::Debug + fmt::Display {
+    // NOTE: Don't add methods that don't contain specific information about the function itself. For example the fits method was moved out to the shared_fits function because it is the same for all Expressions. No need to be able to call expr.fit(patt) when you can call fit(expr, patt). The other is barely even sugar.
     fn args(&self) -> &Vec<Box<dyn Expression>>;
     fn arg(&self, idx: usize) -> &Box<dyn Expression>;
     fn compute(&self, args: Vec<f64>) -> f64;
     fn dims(&self) -> &Vec<u128>;
+    /// eval expects to COMPLETELY evaluate the expression. If it can't be fully reduced to a number, it fails.
     fn eval(&self, vars: &HashMap<u64, f64>) -> f64;
-    fn fits(&self, pattern: &Box<dyn Expression>) -> bool;
+    /// reduce uses only the compute identity to evaluate as far as possible, returning an expression that may be simplified.
+    /// It's like eval but instead of failing, it just leaves the unevaluated piece in the expression
+    // fn reduce(&self) -> &Box<dyn Expression>; But it is being moved outside for reasons described in the note above
+    // fn fits(&self, pattern: &Box<impl Expression>) -> bool;
     fn id(&self) -> u64;
     fn as_any(&self) -> &dyn Any;
+    // Optimize: turn into an optimized function for super speedy calculation when given all variables. Should be highly parallelizable.
 }
 
 struct Identity {
@@ -53,62 +59,86 @@ fn special_expression_id(expr: SpecialExprType) -> u64 {
 
 // SHARED METHOD DEFINITIONS
 
+// TODO - REDUCE!!!! Needed for fits
+    // / reduce uses only the compute identity to evaluate as far as possible, returning an expression that may be simplified
+fn reduce(expr: &Box<dyn Expression>) -> &Box<dyn Expression> {
+    // expr.compute(vec![]);
+    return expr;//TODO
+}
+
 /// Check whether the expression fits a pattern
 /// Two expressions are considered to fit iff
 /// 1. They are the same function
 /// 2. Every argument that is not a placeholder in the pattern fits that argument in the pattern
 /// 3. Whatever expression is found in the place of a placeholder must be a fit with every other argument that has the same placeholder id
 /// TODO - You need to handle expressions without arguments (i.e. variables) in a special way
-fn shared_fits(self_expr: Box<&dyn Expression>, pattern: &Box<dyn Expression>) -> bool {
+/// 
+/// TODO - You need to be using a reference to the same hashmap for all recursive function calls
+fn shared_fits<'a>(self_expr: &'a Box<dyn Expression>, pattern: &Box<dyn Expression>) -> bool {
+    // HashMap keeps track of the expression associated with a placeholder. If we ever find a mismatch, immediately return false.
+    let mut placeholders: HashMap<u64, &Box<dyn Expression>> = HashMap::new();
+    return shared_fits_helper(self_expr, pattern, &mut placeholders);
+}
+fn shared_fits_helper<'a>(self_expr: &'a Box<dyn Expression>, pattern: &Box<dyn Expression>, placeholders: &mut HashMap<u64, &'a Box<dyn Expression>>) -> bool {
+
+    // Base Case - zero args (Value, Placeholder, and Variable)
+    if pattern.args().len() == 0 {
+        if pattern.id() == special_expression_id(SpecialExprType::Value) {
+            // Values must be the same
+            if let Some(casted_pattern) = pattern.as_any().downcast_ref::<Value>() {
+                if let Some(casted_expr) = self_expr.as_any().downcast_ref::<Value>() {
+                    if casted_pattern.val != casted_expr.val {
+                        return false;
+                    }
+                }
+            }
+        } else if pattern.id() == special_expression_id(SpecialExprType::Placeholder) {
+            if let Some(casted_placeholder) = pattern.as_any().downcast_ref::<Placeholder>() {
+                // If it's a placeholder, check the HashMap
+                // Sketch: Apparently the |ref| *ref closure fixed the problem of borrowing both mutably and immutably. dk why
+                if let Some(placeholder_pattern) = placeholders.get(&casted_placeholder.placeholder_id).map(|reference| *reference) {
+                    // If we've already seen this placeholder but the expressions don't match, return false
+                    if !shared_fits_helper(self_expr, placeholder_pattern, placeholders) {
+                        println!("false because placeholders don't match: {} != {}", self_expr, placeholder_pattern);
+                        return false;
+                    } else {
+                        return true;
+                    }
+                } else {
+                    // New placeholder, add to the HashMap
+                    // TODO - plan of attack is to ignore this guy, silence all errors so you can try the & vs Box thing IN A NEW BRANCH
+                    placeholders.insert(casted_placeholder.placeholder_id, self_expr);
+                    println!("Placeholder pattern: {} := {}", pattern, self_expr);
+                    println!("Total placeholders dict is now: {:?}", placeholders);
+                    return true;
+                }
+            }
+        } else if pattern.id() == special_expression_id(SpecialExprType::Variable) {
+            if let Some(casted_pattern) = pattern.as_any().downcast_ref::<Variable>() {
+                if let Some(casted_expr) = self_expr.as_any().downcast_ref::<Variable>() {
+                    if casted_pattern.var_id != casted_expr.var_id {
+                        return false;
+                    }
+                }
+            }
+        }
+    }
+
+    // Check that they are the same function
     if self_expr.id() != pattern.id() {
         println!("false because ids don't match: {} != {}", self_expr.id(), pattern.id());
         return false;
     }
 
-    // Base Case - zero args
-    if pattern.args().len() == 0 {
-        // Check Variable, Placeholder, and Value
-        // Variable - 
-
-        // Placeholder - shouldn't really exist within a normal expression, panic.
-
-        // Value - values must be the same
-        if pattern.id() == special_expression_id(SpecialExprType::Value) {
-            // Values must be the same
-            if pattern.val != self_expr.val {
-                return false;
-            }
-        } else if pattern.id() == special_expression_id(SpecialExprType::Placeholder) {
-            
-        } else if pattern.id() == special_expression_id(SpecialExprType::Variable) {
-            
-        }
-    }
+    // Check that all args are a match
     // TODO - this function should first try to reduce as far as possible, which means you need a function to do that
-
-    // HashMap keeps track of the expression associated with a placeholder. If we ever find a mismatch, immediately return false.
-    let mut placeholders: HashMap<u64, &Box<dyn Expression>> = HashMap::new();
     for i in 0..pattern.args().len() {
         let patt_arg = pattern.arg(i);
         let expr_arg = self_expr.arg(i);
-        if let Some(casted_placeholder) = patt_arg.as_any().downcast_ref::<Placeholder>() {
-            // If it's a placeholder, check the HashMap
-            if let Some(placeholder_pattern) = placeholders.get(&casted_placeholder.placeholder_id) {
-                // If we've already seen this placeholder but the expressions don't match, return false
-                if !placeholder_pattern.fits(expr_arg) {
-                    println!("false because placeholders don't match: {} != {}", expr_arg, placeholder_pattern);
-                    return false;
-                }
-            } else {
-                // New placeholder, add to the HashMap
-                placeholders.insert(casted_placeholder.placeholder_id, expr_arg);
-            }
-        } else {
-            // If it's not a placeholder, must fit exactly
-            if !expr_arg.fits(patt_arg) {
-                println!("false because argument doesn't fit: {} != {}", expr_arg, patt_arg);
-                return false;
-            }
+
+        if !shared_fits_helper(expr_arg, patt_arg, placeholders) {
+            println!("false because argument doesn't fit: {} != {}", expr_arg, patt_arg);
+            return false;
         }
     }
     return true;
@@ -179,10 +209,6 @@ macro_rules! define_fn_struct_impl_expr {
             //         if
             //     }
             // }
-
-            fn fits(&self, pattern: &Box<dyn Expression>) -> bool {
-                return shared_fits(Box::new(self), pattern);
-            }
         }
     };
 } 
@@ -393,9 +419,6 @@ impl Expression for Value {
     fn as_any(&self) -> &dyn Any {
         self
     }
-    fn fits(&self, pattern: &Box<dyn Expression>) -> bool {
-        return shared_fits(Box::new(self), pattern)
-    }
 }
 
 
@@ -464,9 +487,6 @@ impl Expression for Variable {
         // You must search for all matches and replace. In this function, since it aims to return f64 only, you can throw
         // if not everything is simplified after checking all patterns.
     }
-    fn fits(&self, pattern: &Box<dyn Expression>) -> bool {
-        return shared_fits(Box::new(self), pattern)
-    }
 }
 
 struct Placeholder {
@@ -520,10 +540,6 @@ impl Expression for Placeholder {
     fn as_any(&self) -> &dyn Any {
         self
     }
-
-    fn fits(&self, pattern:&Box<dyn Expression>) -> bool {
-        return shared_fits(Box::new(self), pattern)
-    }
 }
 
 fn main() {
@@ -552,10 +568,11 @@ fn main() {
     // let p = Placeholder();
     // let pyid = Cos(p) * Cos(p) + Sin(p) * Sin(p);
     let x = Variable("x");
-    let expr4 = Cos(Value(2.0)) * Cos(Value(1.0)) + Sin(Value(1.0)) * Sin(Value(1.0));
+    let expr5 = x + x;
+    let expr4 = Cos(Value(1.0)) * Cos(Value(0.5) + Value(0.5)) + Sin(Value(1.0)) * Sin(Value(1.0));
     let pyid = Cos(Placeholder(1)) * Cos(Placeholder(1)) + Sin(Placeholder(1)) * Sin(Placeholder(1));
 
-    println!("{} == {} ??? {}", expr4, pyid, expr4.fits(&pyid));
+    println!("{} == {} ??? {}", expr4, pyid, shared_fits(&expr4, &pyid));
 
     //pyid matching with variables (see TODO in the shared_fit docstring), and then start working on sub, then look into procedural macros
 
@@ -564,19 +581,21 @@ fn main() {
 
 
 // MACRO TREE
-///
-/// Granular customization by specifying exactly which portion you want to specify, and it calculates which other macros to run
-/// For example, if I only want to customize define_fn_struct_impl_expr_evaluate, then I say so and the tree does all of define_fn_fn, define_fn_struct_struct, define_fn_struct_impl_expr_{siblings}, and then finally this one in its correct order.
-/// Or just better to define structs with defaults??
-struct MacroTree {
-    subs: Vec<MacroTree>,
-    // run: How do I represent the type of a macro???
-}
+//
+// Granular customization by specifying exactly which portion you want to specify, and it calculates which other macros to run
+// For example, if I only want to customize define_fn_struct_impl_expr_evaluate, then I say so and the tree does all of define_fn_fn, define_fn_struct_struct, define_fn_struct_impl_expr_{siblings}, and then finally this one in its correct order.
+// Or just better to define structs with defaults??
+// struct MacroTree {
+//     subs: Vec<MacroTree>,
+//     // run: How do I represent the type of a macro???
+// }
 
 // TODO
 // * Swap out ndarray for f64
 // * macro for general arity
 // * Copyable Expression pointers? Can you fix this by just making expressions Copyable?
+//   * Macro environment for defining expressions, then could do whatever you want, but why make it in rust at this point?
+//   * NewExpr macro NewExpr(y, x^2 + 5*x + 4) ($ident:ident, $expr:expr) => {...} that automatically clones when needed
 
 
 // * dims is unecessary?
