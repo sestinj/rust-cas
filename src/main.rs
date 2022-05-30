@@ -275,49 +275,49 @@ macro_rules! define_binary_fn {
     ($ident:ident, $name:literal, $op:tt, $op_ident:ident) => {
         define_fn_struct!($ident, $name, |args: Vec<f64>| { args[0] $op args[1] });
 
-        fn $ident(lhs: Box<dyn Expression>, rhs: Box<dyn Expression>) -> Box<$ident> {
+        fn $ident(lhs: &Box<dyn Expression>, rhs: &Box<dyn Expression>) -> Box<$ident> {
             // TODO - run checks on dimensions here always?? In which case you want to return Result<f64> from eval(), not f64
             let dims = copy_vec(lhs.dims());
             let id = calculate_hash(&stringify!($ident));
             return Box::new($ident{args: vec![lhs, rhs], dims: dims, id})
         }
 
-        impl ops::$ident<f64> for Box<dyn Expression> {
+        impl ops::$ident<f64> for &Box<dyn Expression> {
             type Output = Box<dyn Expression>;
             
             fn $op_ident(self, _rhs: f64) -> Box<dyn Expression> {
-                return $ident(self, Value(_rhs));
+                return $ident(self, &Value(_rhs));
             }
         }
         
-        impl ops::$ident<Box<dyn Expression>> for f64 {
+        impl ops::$ident<&Box<dyn Expression>> for f64 {
             type Output = Box<dyn Expression>;
             
-            fn $op_ident(self, _rhs: Box<dyn Expression>) -> Box<dyn Expression> {
-                return $ident(Value(self), _rhs);
+            fn $op_ident(self, _rhs: &Box<dyn Expression>) -> Box<dyn Expression> {
+                return $ident(&Value(self), _rhs);
             }
         }
 
-        impl ops::$ident<u128> for Box<dyn Expression> {
+        impl ops::$ident<u128> for &Box<dyn Expression> {
             type Output = Box<dyn Expression>;
             
             fn $op_ident(self, _rhs: u128) -> Box<dyn Expression> {
-                return $ident(self, Value(_rhs as f64));
+                return $ident(self, &Value(_rhs as f64));
             }
         }
         
-        impl ops::$ident<Box<dyn Expression>> for u128 {
+        impl ops::$ident<&Box<dyn Expression>> for u128 {
             type Output = Box<dyn Expression>;
             
-            fn $op_ident(self, _rhs: Box<dyn Expression>) -> Box<dyn Expression> {
-                return $ident(Value(self as f64), _rhs);
+            fn $op_ident(self, _rhs: &Box<dyn Expression>) -> Box<dyn Expression> {
+                return $ident(&Value(self as f64), _rhs);
             }
         }
 
-        impl ops::$ident<Box<dyn Expression>> for Box<dyn Expression> {
+        impl ops::$ident<&Box<dyn Expression>> for &Box<dyn Expression> {
             type Output = Box<dyn Expression>;
             
-            fn $op_ident(self, _rhs: Box<dyn Expression>) -> Box<dyn Expression> {
+            fn $op_ident(self, _rhs: &Box<dyn Expression>) -> Box<dyn Expression> {
                 return $ident(self, _rhs);
             }
         }
@@ -368,8 +368,8 @@ define_binary_fn!(Div, "Div", /, div);
 
 // SPECIAL FUNCTIONS
 
-struct Value {
-    args: Vec<Box<dyn Expression>>,
+struct Value<'a> {
+    args: Vec<&'a Box<dyn Expression>>,
     dims: Vec<u128>,
     val: f64,
     id: u64
@@ -380,21 +380,22 @@ fn Value(val: f64) -> Box<dyn Expression> {
     return Box::new(Value {args: vec![], dims: vec![1], val, id})
 }
 
-impl fmt::Display for Value {
+impl fmt::Display for Value<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         // TODO - Also same below for Debug
         return write!(f, "{}", self.val);
     }
 }
 
-impl fmt::Debug for Value {
+impl fmt::Debug for Value<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         return write!(f, "{}", self.val);
     }
 }
 
-impl Expression for Value {
-    fn args(&self) -> &Vec<Box<dyn Expression>> {
+// CURRENT - ly in the middle of making all args pointers so you can implement binary ops for references, so you can pass things around easier.
+impl Expression for Value<'_> {
+    fn args(&self) -> &Vec<&Box<dyn Expression>> {
         return &self.args;
     }
     fn arg(&self, idx: usize) -> &Box<dyn Expression> {
@@ -543,36 +544,39 @@ impl Expression for Placeholder {
 }
 
 fn main() {
-    let theta = Value(std::f64::consts::FRAC_PI_3);
-    let s = Sin(theta);
-    let a = Value(5.0);
-    let b = Value(6.0);
-    let t = a + b;
-    // let t = Add(a, b);
-    println!("{} = {}", s, s.eval(&HashMap::new()));
-    println!("{} = {}", t, t.eval(&HashMap::new()));
-    // let ss = Sin(theta); // ??? Tough because Box doesn't implement copy
+    let x = &Variable("x");
+    let expr1 = x + x;
 
-    let c = Variable("c");
-    let d = Variable("d");
-    let expr3 = (2 * c + d - 10) / 2;
-    println!("{} = {}", expr3, expr3.eval(&HashMap::from([(1, 4.0), (2, 5.0)])));
+    // let theta = Value(std::f64::consts::FRAC_PI_3);
+    // let s = Sin(theta);
+    // let a = Value(5.0);
+    // let b = Value(6.0);
+    // let t = a + b;
+    // // let t = Add(a, b);
+    // println!("{} = {}", s, s.eval(&HashMap::new()));
+    // println!("{} = {}", t, t.eval(&HashMap::new()));
+    // // let ss = Sin(theta); // ??? Tough because Box doesn't implement copy
 
-    let co = Cos(Value(0.0));
-    println!("{} = {}", co, co.eval(&HashMap::new()));
+    // let c = Variable("c");
+    // let d = Variable("d");
+    // let expr3 = (2 * c + d - 10) / 2;
+    // println!("{} = {}", expr3, expr3.eval(&HashMap::from([(1, 4.0), (2, 5.0)])));
 
-    // Try again after with variables instead of values
-    // Should you just be using variables instead of placeholders??
+    // let co = Cos(Value(0.0));
+    // println!("{} = {}", co, co.eval(&HashMap::new()));
+
+    // // Try again after with variables instead of values
+    // // Should you just be using variables instead of placeholders??
     
-    // The below is preferable, but this is the same problem as copyable expression pointers.
-    // let p = Placeholder();
-    // let pyid = Cos(p) * Cos(p) + Sin(p) * Sin(p);
-    let x = Variable("x");
-    let expr5 = x + x;
-    let expr4 = Cos(Value(1.0)) * Cos(Value(0.5) + Value(0.5)) + Sin(Value(1.0)) * Sin(Value(1.0));
-    let pyid = Cos(Placeholder(1)) * Cos(Placeholder(1)) + Sin(Placeholder(1)) * Sin(Placeholder(1));
+    // // The below is preferable, but this is the same problem as copyable expression pointers.
+    // // let p = Placeholder();
+    // // let pyid = Cos(p) * Cos(p) + Sin(p) * Sin(p);
+    // let x = Variable("x");
+    // let expr5 = x + x;
+    // let expr4 = Cos(Value(1.0)) * Cos(Value(0.5) + Value(0.5)) + Sin(Value(1.0)) * Sin(Value(1.0));
+    // let pyid = Cos(Placeholder(1)) * Cos(Placeholder(1)) + Sin(Placeholder(1)) * Sin(Placeholder(1));
 
-    println!("{} == {} ??? {}", expr4, pyid, shared_fits(&expr4, &pyid));
+    // println!("{} == {} ??? {}", expr4, pyid, shared_fits(&expr4, &pyid));
 
     //pyid matching with variables (see TODO in the shared_fit docstring), and then start working on sub, then look into procedural macros
 
