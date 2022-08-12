@@ -275,7 +275,7 @@ macro_rules! define_binary_fn {
     ($ident:ident, $name:literal, $op:tt, $op_ident:ident) => {
         define_fn_struct!($ident, $name, |args: Vec<f64>| { args[0] $op args[1] });
 
-        fn $ident(lhs: &Box<dyn Expression>, rhs: &Box<dyn Expression>) -> Box<$ident> {
+        fn $ident(lhs: Box<dyn Expression>, rhs: Box<dyn Expression>) -> Box<$ident> {
             // TODO - run checks on dimensions here always?? In which case you want to return Result<f64> from eval(), not f64
             let dims = copy_vec(lhs.dims());
             let id = calculate_hash(&stringify!($ident));
@@ -293,8 +293,8 @@ macro_rules! define_binary_fn {
         impl ops::$ident<&Box<dyn Expression>> for f64 {
             type Output = Box<dyn Expression>;
             
-            fn $op_ident(self, _rhs: &Box<dyn Expression>) -> Box<dyn Expression> {
-                return $ident(&Value(self), _rhs);
+            fn $op_ident(self, _rhs: Box<dyn Expression>) -> Box<dyn Expression> {
+                return $ident(Value(self), _rhs);
             }
         }
 
@@ -368,8 +368,8 @@ define_binary_fn!(Div, "Div", /, div);
 
 // SPECIAL FUNCTIONS
 
-struct Value<'a> {
-    args: Vec<&'a Box<dyn Expression>>,
+struct Value {
+    args: Vec<Box<dyn Expression>>,
     dims: Vec<u128>,
     val: f64,
     id: u64
@@ -380,22 +380,22 @@ fn Value(val: f64) -> Box<dyn Expression> {
     return Box::new(Value {args: vec![], dims: vec![1], val, id})
 }
 
-impl fmt::Display for Value<'_> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl fmt::Display for Value {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         // TODO - Also same below for Debug
         return write!(f, "{}", self.val);
     }
 }
 
-impl fmt::Debug for Value<'_> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl fmt::Debug for Value {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         return write!(f, "{}", self.val);
     }
 }
 
 // CURRENT - ly in the middle of making all args pointers so you can implement binary ops for references, so you can pass things around easier.
-impl Expression for Value<'_> {
-    fn args(&self) -> &Vec<&Box<dyn Expression>> {
+impl Expression for Value {
+    fn args(&self) -> &Vec<Box<dyn Expression>> {
         return &self.args;
     }
     fn arg(&self, idx: usize) -> &Box<dyn Expression> {
@@ -544,8 +544,8 @@ impl Expression for Placeholder {
 }
 
 fn main() {
-    let x = &Variable("x");
-    let expr1 = x + x;
+    let x = Variable("x");
+    let expr1 = x + 1;
 
     // let theta = Value(std::f64::consts::FRAC_PI_3);
     // let s = Sin(theta);
@@ -603,3 +603,15 @@ fn main() {
 
 
 // * dims is unecessary?
+
+/// * Useful Algorithms
+///     * Polynomial Multiplication - DFT
+///     * Integration - Risch Algorithm
+///     * Factorization - Cantor-Zassenhaus
+/// * https://fredrikj.net/blog/2022/04/things-i-would-like-to-see-in-a-computer-algebra-system/
+/// * A cool way to allow other algebras or types of objects: http://fperez.org/py4science/2009_siam_cse/CSE09_pearu_slides.pdf, but an alternative that I like even more is to build around a type system (e.g. a set or a number would be different types. Even an algebra might be a type that you could manipulate.) Note that commutation is an important concept that will affect some of your algorithms for expression comparison.
+/// * Here's how some of the famous CAS systems optimize:
+///     * Macsyma: http://people.eecs.berkeley.edu/~fateman/papers/Fateman-Salz_Simplifier_Paper.pdf
+///     * Mathematica: https://dl.acm.org/doi/abs/10.5555/129711
+///     * Maple: https://d1wqtxts1xzle7.cloudfront.net/31139001/1984-muc-design-with-cover-page-v2.pdf?Expires=1654008182&Signature=I1CQzftULHyHsojKnzoidOmPc29RN3Ur1QrlTTsB1rpzgmyLU2xU3KZjwei8k15MtxSvQ-Z-MLVqMMbFAphvZE5Qe5~-XtqS3wVnc-CpBpgg0aA4YfMOCAXmw5Z0Ng2EVu~1QJHwUI5vHMYbWS5IYj1Bk5g7zm4jdhP25iN3IGv2EGiFf6nIIbeOZho2HWoTTJitASRC3ogT3Tak~U5g2~USe7--CUEL4xOJbuEncIavg4Es-MKERaJHSvGiLmHFUPWzYZYdwS2J~wS-dFC9tmBUipW~qNwAeUwlkm6VFKV1iBf3ZRDXdn6pxPLxf3v-PDOI6i7YT0SBRclnvu8PVg__&Key-Pair-Id=APKAJLOHF5GGSLRBV4ZA
+const _: i8 = 0;
