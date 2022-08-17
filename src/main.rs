@@ -4,7 +4,7 @@
 // * Instead of ever using match statements, we call the evaluate function on the Operation struct instance itself
 
 use std::{
-    fmt,
+    fmt::{self, Debug},
     ops,
     collections::{
         HashMap,
@@ -14,6 +14,10 @@ use std::{
     hash::{
         Hash,
         Hasher
+    },
+    io::{
+        stdin,
+        stdout
     }
 };
 
@@ -550,8 +554,15 @@ impl Expression for Placeholder {
 }
 
 fn main() {
-    let x = Variable("x");
-    let expr1 = x + 1;
+    // let x = Variable("x");
+    // let expr1 = x + 1;
+    
+    let mut line: String = String::new();
+    loop {
+        println!(">> ");
+        stdin().read_line(&mut line).unwrap();
+        println!("{}", line);
+    }
 
     // let theta = Value(std::f64::consts::FRAC_PI_3);
     // let s = Sin(theta);
