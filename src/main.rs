@@ -4,7 +4,7 @@
 // * Instead of ever using match statements, we call the evaluate function on the Operation struct instance itself
 
 use std::{
-    fmt,
+    fmt::{self, Debug},
     ops,
     collections::{
         HashMap,
@@ -14,14 +14,24 @@ use std::{
     hash::{
         Hash,
         Hasher
+    },
+    io::{
+        stdin,
+        stdout
     }
 };
 
+/// structs that implement Expression are the nodes of the AST, an operator/function with some
+/// number of arguments
 trait Expression: fmt::Debug + fmt::Display {
     // NOTE: Don't add methods that don't contain specific information about the function itself. For example the fits method was moved out to the shared_fits function because it is the same for all Expressions. No need to be able to call expr.fit(patt) when you can call fit(expr, patt). The other is barely even sugar.
+    /// Get the arguments of the operator
     fn args(&self) -> &Vec<Box<dyn Expression>>;
+    /// Get the argument at the given index
     fn arg(&self, idx: usize) -> &Box<dyn Expression>;
+    /// 
     fn compute(&self, args: Vec<f64>) -> f64;
+    /// Get the dimensions of the tensor represented by this expression
     fn dims(&self) -> &Vec<u128>;
     /// eval expects to COMPLETELY evaluate the expression. If it can't be fully reduced to a number, it fails.
     fn eval(&self, vars: &HashMap<u64, f64>) -> f64;
@@ -544,8 +554,15 @@ impl Expression for Placeholder {
 }
 
 fn main() {
-    let x = Variable("x");
-    let expr1 = x + 1;
+    // let x = Variable("x");
+    // let expr1 = x + 1;
+    
+    let mut line: String = String::new();
+    loop {
+        println!(">> ");
+        stdin().read_line(&mut line).unwrap();
+        println!("{}", line);
+    }
 
     // let theta = Value(std::f64::consts::FRAC_PI_3);
     // let s = Sin(theta);
